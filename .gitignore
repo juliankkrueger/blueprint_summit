@@ -1,0 +1,4 @@
+# Sichere Dateien — niemals hochladen
+.env
+node_modules/
+.DS_Store

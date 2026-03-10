@@ -1,0 +1,1364 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Blueprint Summit — Survey Architect</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@400;700;900&family=Noto+Sans+Display:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --navy:        #072330;
+      --teal:        #00E9B9;
+      --cyan:        #5CE1E6;
+      --text:        #FFFFFF;
+      --muted:       rgba(255,255,255,0.55);
+      --card-bg:     rgba(255,255,255,0.05);
+      --card-border: rgba(0,233,185,0.28);
+    }
+
+    html, body {
+      min-height: 100%;
+      background-color: var(--navy);
+      color: var(--text);
+      font-family: 'Noto Sans Display', sans-serif;
+      overflow-x: hidden;
+    }
+
+    /* ── Topographic background ── */
+    .topo-bg {
+      position: fixed; inset: 0; z-index: 0;
+      pointer-events: none; overflow: hidden;
+    }
+    .topo-bg svg { width: 100%; height: 100%; opacity: 0.07; }
+    .topo-bg::after {
+      content: '';
+      position: absolute; inset: 0;
+      background: radial-gradient(ellipse 70% 60% at 50% 50%, rgba(0,233,185,0.08) 0%, transparent 70%);
+    }
+
+    /* ── Page wrapper ── */
+    .page {
+      position: relative; z-index: 1;
+      min-height: 100vh;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 2rem 1rem;
+    }
+    .page.top-align { justify-content: flex-start; padding-top: 3rem; }
+
+    /* ── Card ── */
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      border-radius: 24px;
+      padding: 3rem 3.5rem;
+      width: 100%; max-width: 480px;
+      text-align: center;
+      box-shadow: 0 0 0 1px rgba(0,233,185,0.06), 0 8px 48px rgba(0,0,0,0.45), 0 0 80px rgba(0,233,185,0.06);
+      animation: cardIn 0.8s cubic-bezier(0.22,1,0.36,1) both;
+    }
+    .card.wide { max-width: 700px; }
+    .card:focus-within {
+      box-shadow: 0 0 0 1px rgba(0,233,185,0.14), 0 8px 48px rgba(0,0,0,0.5), 0 0 120px rgba(0,233,185,0.13);
+    }
+
+    @keyframes cardIn {
+      from { opacity: 0; transform: translateY(32px) scale(0.97); }
+      to   { opacity: 1; transform: translateY(0)   scale(1); }
+    }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(16px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to   { opacity: 1; }
+    }
+
+    /* ── Logo ── */
+    .logo-wrap { margin-bottom: 2rem; animation: fadeUp 0.7s 0.1s cubic-bezier(0.22,1,0.36,1) both; }
+    .logo-wrap img {
+      max-width: 200px; width: 100%; height: auto;
+      filter: drop-shadow(0 0 12px rgba(0,233,185,0.25));
+    }
+
+    /* ── Typography ── */
+    .heading {
+      font-family: 'Unbounded', sans-serif;
+      font-weight: 700;
+      font-size: clamp(1.4rem, 4vw, 1.9rem);
+      letter-spacing: -0.02em;
+      background: linear-gradient(135deg, var(--teal) 0%, var(--cyan) 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+      line-height: 1.2; margin-bottom: 0.6rem;
+      animation: fadeUp 0.7s 0.2s cubic-bezier(0.22,1,0.36,1) both;
+    }
+    .subheading {
+      font-size: 0.9rem; font-weight: 400; color: var(--muted);
+      line-height: 1.5; margin-bottom: 2.4rem; letter-spacing: 0.01em;
+      animation: fadeUp 0.7s 0.3s cubic-bezier(0.22,1,0.36,1) both;
+    }
+    .divider {
+      width: 40px; height: 2px;
+      background: linear-gradient(90deg, var(--teal), var(--cyan));
+      border-radius: 2px; margin: 0 auto 2rem;
+      animation: fadeUp 0.7s 0.35s cubic-bezier(0.22,1,0.36,1) both;
+    }
+
+    /* ── Buttons ── */
+    .btn-primary {
+      width: 100%; padding: 0.95rem 2rem;
+      background: linear-gradient(135deg, var(--teal) 0%, var(--cyan) 100%);
+      color: #072330;
+      font-family: 'Unbounded', sans-serif; font-weight: 700;
+      font-size: 0.85rem; letter-spacing: 0.04em;
+      border: none; border-radius: 9999px; cursor: pointer;
+      transition: opacity 0.2s, transform 0.2s, box-shadow 0.3s;
+      box-shadow: 0 4px 24px rgba(0,233,185,0.25);
+    }
+    .btn-primary:hover { opacity: 0.9; transform: translateY(-1px); box-shadow: 0 6px 32px rgba(0,233,185,0.38); }
+    .btn-primary:active { transform: translateY(0); opacity: 1; }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    .btn-secondary {
+      width: 100%; padding: 0.85rem 2rem;
+      background: transparent;
+      color: var(--muted);
+      font-family: 'Noto Sans Display', sans-serif; font-weight: 500;
+      font-size: 0.88rem;
+      border: 1px solid rgba(255,255,255,0.15); border-radius: 9999px; cursor: pointer;
+      transition: border-color 0.2s, color 0.2s;
+      margin-top: 0.75rem;
+    }
+    .btn-secondary:hover { border-color: rgba(0,233,185,0.4); color: var(--teal); }
+
+    /* ── Login form ── */
+    .form-group { margin-bottom: 1.2rem; animation: fadeUp 0.7s 0.4s cubic-bezier(0.22,1,0.36,1) both; }
+    .input-wrap { position: relative; }
+    .input-wrap .lock-icon {
+      position: absolute; left: 1rem; top: 50%; transform: translateY(-50%);
+      color: var(--muted); pointer-events: none; transition: color 0.3s;
+    }
+    input[type="password"] {
+      width: 100%;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 12px; padding: 0.9rem 1rem 0.9rem 2.8rem;
+      font-family: 'Noto Sans Display', sans-serif; font-size: 0.95rem;
+      color: var(--text); outline: none;
+      transition: border-color 0.3s, box-shadow 0.3s, background 0.3s;
+      letter-spacing: 0.05em;
+    }
+    input[type="password"]::placeholder { color: var(--muted); letter-spacing: 0; }
+    input[type="password"]:focus {
+      border-color: rgba(0,233,185,0.5);
+      background: rgba(0,233,185,0.04);
+      box-shadow: 0 0 0 3px rgba(0,233,185,0.1);
+    }
+    .input-wrap:focus-within .lock-icon { color: var(--teal); }
+
+    #login-error {
+      margin-top: 1rem; font-size: 0.85rem; color: #ff6b7a;
+      display: none;
+    }
+    #login-error.visible { display: block; }
+
+    .card-footer {
+      margin-top: 2.2rem; font-size: 0.72rem;
+      color: rgba(255,255,255,0.25); letter-spacing: 0.06em; text-transform: uppercase;
+    }
+
+    /* ── Upload zone ── */
+    .upload-zone {
+      border: 2px dashed rgba(0,233,185,0.3);
+      border-radius: 16px;
+      padding: 2.5rem 1.5rem;
+      cursor: pointer;
+      transition: border-color 0.3s, background 0.3s;
+      margin-bottom: 1.5rem;
+      animation: fadeUp 0.7s 0.4s cubic-bezier(0.22,1,0.36,1) both;
+    }
+    .upload-zone:hover, .upload-zone.dragover {
+      border-color: var(--teal);
+      background: rgba(0,233,185,0.04);
+    }
+    .upload-zone .upload-icon {
+      margin-bottom: 1rem;
+      color: var(--teal);
+      opacity: 0.7;
+    }
+    .upload-zone .upload-title {
+      font-family: 'Unbounded', sans-serif;
+      font-size: 0.85rem; font-weight: 700;
+      color: var(--text); margin-bottom: 0.4rem;
+    }
+    .upload-zone .upload-hint {
+      font-size: 0.8rem; color: var(--muted);
+    }
+    .upload-zone .file-selected {
+      font-size: 0.85rem; color: var(--teal);
+      margin-top: 0.8rem; font-weight: 500;
+      word-break: break-all;
+    }
+    #file-input { display: none; }
+
+    #upload-error {
+      margin-bottom: 1rem; font-size: 0.85rem; color: #ff6b7a;
+      display: none;
+    }
+    #upload-error.visible { display: block; }
+
+    /* ── Loading / Progress ── */
+    #view-loading .card { max-width: 440px; }
+
+    .progress-label {
+      font-size: 0.82rem; color: var(--muted);
+      margin-bottom: 1.2rem; min-height: 1.4em;
+      transition: opacity 0.4s;
+    }
+
+    .progress-track {
+      width: 100%; height: 6px;
+      background: rgba(255,255,255,0.08);
+      border-radius: 999px; overflow: hidden;
+      margin-bottom: 2rem;
+    }
+    .progress-bar {
+      height: 100%;
+      background: linear-gradient(90deg, var(--teal), var(--cyan));
+      border-radius: 999px;
+      width: 0%;
+      transition: width 0.8s cubic-bezier(0.4,0,0.2,1);
+      box-shadow: 0 0 12px rgba(0,233,185,0.5);
+    }
+
+    .loading-dots {
+      display: flex; justify-content: center; gap: 6px; margin-top: 0.5rem;
+    }
+    .loading-dots span {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--teal); opacity: 0.3;
+      animation: dotPulse 1.4s ease-in-out infinite;
+    }
+    .loading-dots span:nth-child(2) { animation-delay: 0.2s; }
+    .loading-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes dotPulse {
+      0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
+      40% { opacity: 1; transform: scale(1.2); }
+    }
+
+    /* ── Confirmation view ── */
+    #view-confirm .card { max-width: 680px; text-align: left; }
+
+    .confirm-level-badge {
+      display: inline-block;
+      font-family: 'Unbounded', sans-serif;
+      font-size: 0.7rem; font-weight: 700;
+      letter-spacing: 0.1em; text-transform: uppercase;
+      color: var(--navy);
+      background: linear-gradient(135deg, var(--teal), var(--cyan));
+      padding: 0.35rem 1.1rem; border-radius: 9999px;
+      margin-bottom: 1.5rem;
+    }
+
+    .confirm-heading {
+      font-family: 'Unbounded', sans-serif;
+      font-size: 1.1rem; font-weight: 700;
+      color: var(--text);
+      margin-bottom: 0.4rem;
+    }
+    .confirm-sub {
+      font-size: 0.85rem; color: var(--muted);
+      margin-bottom: 1.8rem;
+    }
+
+    .categories-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+    .category-card {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(0,233,185,0.15);
+      border-radius: 14px;
+      padding: 1.1rem 1.2rem;
+      animation: fadeIn 0.5s ease both;
+    }
+    .category-card:nth-child(2) { animation-delay: 0.05s; }
+    .category-card:nth-child(3) { animation-delay: 0.10s; }
+    .category-card:nth-child(4) { animation-delay: 0.15s; }
+    .category-card:nth-child(5) { animation-delay: 0.20s; }
+    .category-card:nth-child(6) { animation-delay: 0.25s; }
+
+    .category-name {
+      font-family: 'Unbounded', sans-serif;
+      font-size: 0.75rem; font-weight: 700;
+      color: var(--teal); letter-spacing: 0.05em;
+      text-transform: uppercase; margin-bottom: 0.8rem;
+    }
+    .bullet-list { list-style: none; padding: 0; }
+    .bullet-list li {
+      font-size: 0.82rem; color: rgba(255,255,255,0.75);
+      padding: 0.3rem 0;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      padding-left: 1rem;
+      position: relative;
+      line-height: 1.4;
+    }
+    .bullet-list li::before {
+      content: '';
+      position: absolute; left: 0; top: 0.6rem;
+      width: 5px; height: 5px; border-radius: 50%;
+      background: var(--teal); opacity: 0.6;
+    }
+    .bullet-list li:last-child { border-bottom: none; }
+
+    .confirm-actions {
+      display: flex; flex-direction: column; gap: 0.75rem;
+      margin-top: 0.5rem;
+    }
+
+    /* ── Placeholder for next milestone ── */
+    .milestone-badge {
+      display: inline-block;
+      font-size: 0.7rem; font-family: 'Unbounded', sans-serif;
+      letter-spacing: 0.12em; text-transform: uppercase;
+      color: var(--teal);
+      background: rgba(0,233,185,0.1);
+      border: 1px solid rgba(0,233,185,0.25);
+      border-radius: 9999px; padding: 0.3rem 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    /* ── Survey / Fragebogen ── */
+    .role-badge {
+      display: inline-block;
+      font-family: 'Unbounded', sans-serif;
+      font-size: 0.68rem; font-weight: 700;
+      letter-spacing: 0.1em; text-transform: uppercase;
+      color: var(--navy);
+      padding: 0.4rem 1.2rem; border-radius: 9999px;
+      margin-bottom: 1.2rem;
+    }
+    .role-badge.mentor { background: linear-gradient(135deg, var(--teal), #00c99e); }
+    .role-badge.mentee { background: linear-gradient(135deg, var(--cyan), #4ac8d4); }
+
+    .survey-header {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      gap: 1rem; flex-wrap: wrap;
+      margin-bottom: 1.8rem;
+      padding-bottom: 1.2rem;
+      border-bottom: 1px solid rgba(0,233,185,0.2);
+    }
+    .survey-title {
+      font-family: 'Unbounded', sans-serif;
+      font-size: clamp(1rem, 3vw, 1.35rem); font-weight: 700;
+      background: linear-gradient(135deg, var(--teal) 0%, var(--cyan) 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+      margin-bottom: 0.3rem;
+    }
+    .survey-sublevel { font-size: 0.82rem; color: var(--muted); }
+    .survey-instructions {
+      font-size: 0.8rem; color: var(--muted);
+      line-height: 1.55; text-align: right; max-width: 230px;
+    }
+
+    .survey-category { margin-bottom: 2.2rem; }
+    .survey-cat-name {
+      font-family: 'Unbounded', sans-serif;
+      font-size: 0.7rem; font-weight: 700;
+      color: var(--teal); letter-spacing: 0.09em; text-transform: uppercase;
+      padding-bottom: 0.6rem; margin-bottom: 0.4rem;
+      border-bottom: 1px solid rgba(0,233,185,0.2);
+    }
+
+    .slider-row {
+      display: flex; align-items: center; gap: 1rem;
+      padding: 0.75rem 0;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    .slider-row:last-child { border-bottom: none; }
+    .slider-label {
+      flex: 1; font-size: 0.84rem; color: rgba(255,255,255,0.82);
+      line-height: 1.4; min-width: 0;
+    }
+    .slider-control {
+      display: flex; align-items: center; gap: 0.5rem;
+      flex-shrink: 0;
+    }
+    .slider-minmax {
+      font-size: 0.68rem; color: var(--muted);
+      min-width: 1.4ch; text-align: center;
+    }
+    .slider-value {
+      font-family: 'Unbounded', sans-serif;
+      font-size: 0.88rem; font-weight: 700;
+      min-width: 1.6ch; text-align: center;
+      transition: color 0.2s;
+    }
+    .slider-value.teal { color: var(--teal); }
+    .slider-value.cyan { color: var(--cyan); }
+
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 155px; height: 5px;
+      border-radius: 999px; outline: none;
+      cursor: pointer; border: none;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 20px; height: 20px;
+      border-radius: 50%; cursor: pointer;
+      transition: transform 0.15s;
+    }
+    input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.18); }
+    input[type="range"].mentor-slider::-webkit-slider-thumb {
+      background: var(--teal);
+      box-shadow: 0 0 10px rgba(0,233,185,0.55);
+    }
+    input[type="range"].mentee-slider::-webkit-slider-thumb {
+      background: var(--cyan);
+      box-shadow: 0 0 10px rgba(92,225,230,0.55);
+    }
+    input[type="range"]::-moz-range-thumb {
+      width: 20px; height: 20px;
+      border-radius: 50%; border: none; cursor: pointer;
+    }
+    input[type="range"].mentor-slider::-moz-range-thumb { background: var(--teal); }
+    input[type="range"].mentee-slider::-moz-range-thumb { background: var(--cyan); }
+
+    .survey-action-wrap {
+      margin-top: 2rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid rgba(255,255,255,0.07);
+    }
+
+    /* ── Results View ── */
+    .results-chart-wrap {
+      position: relative;
+      max-width: 480px; margin: 0 auto 2.5rem;
+    }
+
+    .results-legend {
+      display: flex; justify-content: center; gap: 2rem;
+      margin-bottom: 2rem;
+    }
+    .legend-item {
+      display: flex; align-items: center; gap: 0.5rem;
+      font-size: 0.82rem; color: rgba(255,255,255,0.8);
+    }
+    .legend-dot {
+      width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0;
+    }
+
+    .results-summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+      gap: 0.9rem; margin-bottom: 0.5rem;
+    }
+    .result-cat-card {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 14px; padding: 1rem 1.1rem;
+      animation: fadeIn 0.4s ease both;
+    }
+    .result-cat-name {
+      font-family: 'Unbounded', sans-serif;
+      font-size: 0.65rem; font-weight: 700;
+      color: rgba(255,255,255,0.5);
+      letter-spacing: 0.08em; text-transform: uppercase;
+      margin-bottom: 0.8rem;
+    }
+    .result-scores { display: flex; gap: 1.2rem; }
+    .result-score { display: flex; flex-direction: column; gap: 0.1rem; }
+    .score-label { font-size: 0.68rem; color: var(--muted); }
+    .score-num {
+      font-family: 'Unbounded', sans-serif;
+      font-size: 1.25rem; font-weight: 700;
+    }
+    .score-num.teal { color: var(--teal); }
+    .score-num.cyan { color: var(--cyan); }
+
+    .results-actions {
+      margin-top: 2rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid rgba(255,255,255,0.07);
+      display: flex; flex-direction: column; gap: 0.75rem;
+    }
+
+    /* ── Handoff Overlay ── */
+    #handoff-overlay {
+      position: fixed; inset: 0; z-index: 200;
+      background: rgba(7,35,48,0.97);
+      display: none; align-items: center; justify-content: center;
+      flex-direction: column; text-align: center;
+      animation: fadeIn 0.3s ease;
+    }
+    .handoff-icon {
+      width: 72px; height: 72px; border-radius: 50%;
+      background: rgba(0,233,185,0.12);
+      border: 1px solid rgba(0,233,185,0.3);
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 1.5rem;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(0,233,185,0.2); }
+      50% { box-shadow: 0 0 0 16px rgba(0,233,185,0); }
+    }
+
+    /* ── PDF loading state ── */
+    .btn-success {
+      background: rgba(0,233,185,0.15) !important;
+      color: var(--teal) !important;
+      border: 1px solid rgba(0,233,185,0.35) !important;
+      box-shadow: none !important;
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 640px) {
+      .card { padding: 1.8rem 1.2rem; }
+      .categories-grid { grid-template-columns: 1fr; }
+      .slider-row { flex-direction: column; align-items: flex-start; gap: 0.4rem; }
+      .slider-control { width: 100%; justify-content: space-between; }
+      input[type="range"] { flex: 1; min-width: 0; }
+      .survey-header { flex-direction: column; }
+      .survey-instructions { text-align: left; max-width: none; }
+      .results-summary-grid { grid-template-columns: 1fr 1fr; }
+      .results-chart-wrap { max-width: 100%; }
+      .heading { font-size: clamp(1.1rem, 5vw, 1.5rem); }
+    }
+    @media (max-width: 400px) {
+      .results-summary-grid { grid-template-columns: 1fr; }
+    }
+    /* iPad landscape: wider slider */
+    @media (min-width: 641px) and (max-width: 1024px) {
+      input[type="range"] { width: 200px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Topographic background -->
+  <div class="topo-bg">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
+      <defs><style>.topo{fill:none;stroke:#00E9B9;stroke-width:0.8}</style></defs>
+      <ellipse class="topo" cx="720" cy="450" rx="120" ry="80"/>
+      <ellipse class="topo" cx="720" cy="450" rx="200" ry="140"/>
+      <ellipse class="topo" cx="720" cy="450" rx="290" ry="205"/>
+      <ellipse class="topo" cx="720" cy="450" rx="385" ry="275"/>
+      <ellipse class="topo" cx="720" cy="450" rx="490" ry="350"/>
+      <ellipse class="topo" cx="720" cy="450" rx="600" ry="430"/>
+      <ellipse class="topo" cx="720" cy="450" rx="720" ry="515"/>
+      <ellipse class="topo" cx="720" cy="450" rx="850" ry="605"/>
+      <ellipse class="topo" cx="720" cy="450" rx="990" ry="700"/>
+      <ellipse class="topo" cx="720" cy="450" rx="1140" ry="800"/>
+      <ellipse class="topo" cx="720" cy="450" rx="1300" ry="905"/>
+      <ellipse class="topo" cx="180" cy="160" rx="90" ry="60"/>
+      <ellipse class="topo" cx="180" cy="160" rx="160" ry="110"/>
+      <ellipse class="topo" cx="180" cy="160" rx="240" ry="165"/>
+      <ellipse class="topo" cx="180" cy="160" rx="330" ry="225"/>
+      <ellipse class="topo" cx="1260" cy="760" rx="100" ry="65"/>
+      <ellipse class="topo" cx="1260" cy="760" rx="180" ry="120"/>
+      <ellipse class="topo" cx="1260" cy="760" rx="270" ry="185"/>
+      <ellipse class="topo" cx="1260" cy="760" rx="370" ry="255"/>
+      <ellipse class="topo" cx="1300" cy="100" rx="80" ry="55"/>
+      <ellipse class="topo" cx="1300" cy="100" rx="155" ry="105"/>
+      <ellipse class="topo" cx="1300" cy="100" rx="240" ry="160"/>
+      <ellipse class="topo" cx="100" cy="820" rx="85" ry="58"/>
+      <ellipse class="topo" cx="100" cy="820" rx="160" ry="110"/>
+      <ellipse class="topo" cx="100" cy="820" rx="245" ry="168"/>
+    </svg>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       VIEW 1 — Login
+  ════════════════════════════════════════ -->
+  <div id="view-login" class="page">
+    <div class="card">
+      <div class="logo-wrap">
+        <img src="/branding_assets/brand_guide/Logos/blueprint_summit_logo_weiss.png" alt="Blueprint Summit" />
+      </div>
+      <h1 class="heading">Survey Architect</h1>
+      <p class="subheading">Kompetenzmodell-Analyse<br>für Mentor &amp; Mentee</p>
+      <div class="divider"></div>
+
+      <form id="login-form" novalidate>
+        <div class="form-group">
+          <div class="input-wrap">
+            <input type="password" id="password-input" placeholder="Passwort eingeben"
+                   autocomplete="current-password" required />
+            <span class="lock-icon">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                   stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+              </svg>
+            </span>
+          </div>
+        </div>
+        <button type="submit" class="btn-primary" id="login-btn" style="animation: fadeUp 0.7s 0.5s cubic-bezier(0.22,1,0.36,1) both;">
+          Weiter →
+        </button>
+        <div id="login-error" role="alert">Falsches Passwort. Bitte erneut versuchen.</div>
+      </form>
+      <div class="card-footer">Blueprint Summit · 14.03.2026</div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       VIEW 2 — Upload
+  ════════════════════════════════════════ -->
+  <div id="view-upload" class="page" style="display:none;">
+    <div class="card" style="max-width:520px;">
+      <div class="logo-wrap">
+        <img src="/branding_assets/brand_guide/Logos/blueprint_summit_logo_weiss.png" alt="Blueprint Summit" />
+      </div>
+      <h2 class="heading" style="font-size:1.4rem;">Dokument hochladen</h2>
+      <p class="subheading">Lade das Kompetenzmodell für ein Level hoch.<br>PDF oder Screenshot (PNG/JPG).</p>
+      <div class="divider"></div>
+
+      <div id="upload-error" role="alert"></div>
+
+      <div class="upload-zone" id="upload-zone">
+        <div class="upload-icon">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+        </div>
+        <div class="upload-title">Datei hier ablegen oder klicken</div>
+        <div class="upload-hint">PDF · PNG · JPG — max. 20 MB</div>
+        <div class="file-selected" id="file-name"></div>
+      </div>
+      <input type="file" id="file-input" accept=".pdf,.png,.jpg,.jpeg,.webp" />
+
+      <button class="btn-primary" id="upload-btn" disabled style="animation:none;">
+        Formular erstellen →
+      </button>
+      <div class="card-footer">Blueprint Summit · 14.03.2026</div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       VIEW 3 — Loading / KI analysiert
+  ════════════════════════════════════════ -->
+  <div id="view-loading" class="page" style="display:none;">
+    <div class="card">
+      <div class="logo-wrap">
+        <img src="/branding_assets/brand_guide/Logos/blueprint_summit_logo_weiss.png" alt="Blueprint Summit" />
+      </div>
+      <h2 class="heading" style="font-size:1.3rem; margin-bottom:1.8rem;">KI analysiert Dokument</h2>
+
+      <div class="progress-label" id="progress-label">Dokument wird analysiert...</div>
+      <div class="progress-track">
+        <div class="progress-bar" id="progress-bar"></div>
+      </div>
+
+      <div class="loading-dots">
+        <span></span><span></span><span></span>
+      </div>
+
+      <div class="card-footer" style="margin-top:2rem;">Blueprint Summit · 14.03.2026</div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       VIEW 4 — Bestätigung extrahierte Struktur
+  ════════════════════════════════════════ -->
+  <div id="view-confirm" class="page top-align" style="display:none;">
+    <div class="card wide">
+      <div style="text-align:center; margin-bottom:1.5rem;">
+        <img src="/branding_assets/brand_guide/Logos/blueprint_summit_logo_weiss.png"
+             alt="Blueprint Summit" style="max-width:160px; height:auto; filter:drop-shadow(0 0 10px rgba(0,233,185,0.2));" />
+      </div>
+
+      <div style="text-align:center;">
+        <div class="confirm-level-badge" id="confirm-level-name">Level</div>
+      </div>
+      <div class="confirm-heading" style="text-align:center;" id="confirm-heading">Struktur erkannt</div>
+      <p class="confirm-sub" style="text-align:center;">
+        Bitte prüfe die extrahierte Struktur. Stimmt alles, kannst du mit der Bewertung beginnen.
+      </p>
+
+      <div class="categories-grid" id="categories-grid">
+        <!-- Dynamisch befüllt -->
+      </div>
+
+      <div class="confirm-actions">
+        <button class="btn-primary" id="confirm-btn">
+          Bestätigen &amp; Mentor-Bewertung starten →
+        </button>
+        <button class="btn-secondary" id="reupload-btn">
+          ↩ Anderes Dokument hochladen
+        </button>
+      </div>
+
+      <div class="card-footer" style="margin-top:2rem; text-align:center;">Blueprint Summit · 14.03.2026</div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       VIEW 5 — Fragebogen (Mentor & Mentee)
+  ════════════════════════════════════════ -->
+  <div id="view-survey" class="page top-align" style="display:none;">
+    <div class="card wide" style="max-width:780px; text-align:left;">
+
+      <div style="text-align:center; margin-bottom:1.1rem;">
+        <img src="/branding_assets/brand_guide/Logos/blueprint_summit_logo_weiss.png"
+             alt="Blueprint Summit" style="max-width:130px; height:auto; filter:drop-shadow(0 0 10px rgba(0,233,185,0.2));" />
+      </div>
+
+      <div style="text-align:center;">
+        <div class="role-badge mentor" id="survey-role-badge">Mentor-Bewertung</div>
+      </div>
+
+      <div class="survey-header">
+        <div>
+          <div class="survey-title" id="survey-title">Mentor-Bewertung</div>
+          <div class="survey-sublevel" id="survey-level-display"></div>
+        </div>
+        <p class="survey-instructions" id="survey-instructions">
+          Bewerte jede Kompetenz auf einer Skala von 0–10.
+        </p>
+      </div>
+
+      <div id="survey-questions">
+        <!-- Dynamisch befüllt -->
+      </div>
+
+      <div class="survey-action-wrap">
+        <button class="btn-primary" id="survey-action-btn">
+          Übergabe an Mentee →
+        </button>
+      </div>
+
+      <div class="card-footer" style="margin-top:1.5rem; text-align:center;">Blueprint Summit · 14.03.2026</div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       VIEW 6 — Ergebnis / Radar-Chart
+  ════════════════════════════════════════ -->
+  <div id="view-results" class="page top-align" style="display:none;">
+    <div class="card wide" style="max-width:860px; text-align:left;">
+
+      <div style="text-align:center; margin-bottom:1.1rem;">
+        <img src="/branding_assets/brand_guide/Logos/blueprint_summit_logo_weiss.png"
+             alt="Blueprint Summit" style="max-width:130px; height:auto; filter:drop-shadow(0 0 10px rgba(0,233,185,0.2));" />
+      </div>
+
+      <div style="text-align:center; margin-bottom:0.5rem;">
+        <div class="confirm-level-badge" id="results-level-badge">Level</div>
+      </div>
+      <h2 class="heading" style="text-align:center; font-size:1.3rem; margin-bottom:0.4rem;">Auswertung</h2>
+      <p style="text-align:center; color:var(--muted); font-size:0.82rem; margin-bottom:2rem;">
+        Vergleich Mentor vs. Mentee — alle Kategorien auf einen Blick.
+      </p>
+
+      <!-- Radar Chart -->
+      <div class="results-chart-wrap">
+        <canvas id="radar-canvas"></canvas>
+      </div>
+
+      <!-- Legende -->
+      <div class="results-legend">
+        <div class="legend-item">
+          <div class="legend-dot" style="background:var(--teal); box-shadow:0 0 8px rgba(0,233,185,0.5);"></div>
+          <span>Mentor</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-dot" style="background:var(--cyan); box-shadow:0 0 8px rgba(92,225,230,0.5);"></div>
+          <span>Mentee</span>
+        </div>
+      </div>
+
+      <!-- Kategorie-Scores -->
+      <div class="results-summary-grid" id="results-summary-grid"></div>
+
+      <!-- Aktions-Buttons -->
+      <div class="results-actions">
+        <button class="btn-primary" id="pdf-btn">PDF herunterladen →</button>
+        <button class="btn-secondary" id="results-restart-btn" style="display:none;">↩ Nächstes Level bewerten</button>
+      </div>
+
+      <div class="card-footer" style="margin-top:1.5rem; text-align:center;">Blueprint Summit · 14.03.2026</div>
+    </div>
+  </div>
+
+
+  <!-- Handoff Overlay -->
+  <div id="handoff-overlay">
+    <div class="handoff-icon">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none"
+           stroke="#00E9B9" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M5 12h14M12 5l7 7-7 7"/>
+      </svg>
+    </div>
+    <h2 class="heading" style="font-size:1.4rem; margin-bottom:0.6rem;">Übergabe an Mentee</h2>
+    <p style="color:var(--muted); font-size:0.9rem;">Bitte das Gerät jetzt weitergeben.</p>
+  </div>
+
+  <script>
+    // ── State ──────────────────────────────────────────
+    let extractedData  = null;
+    let mentorRatings  = [];   // mentorRatings[catIdx][bulletIdx] = 0–10
+    let menteeRatings  = [];
+
+    // ── View helpers ──────────────────────────────────
+    const views = ['view-login','view-upload','view-loading','view-confirm','view-survey','view-results'];
+
+    function showView(id) {
+      views.forEach(v => {
+        const el = document.getElementById(v);
+        if (el) {
+          if (v === id) {
+            el.style.opacity = '0';
+            el.style.display = 'flex';
+            requestAnimationFrame(() => {
+              el.style.transition = 'opacity 0.4s ease';
+              el.style.opacity = '1';
+            });
+          } else {
+            el.style.display = 'none';
+            el.style.opacity = '';
+            el.style.transition = '';
+          }
+        }
+      });
+    }
+
+    // ── LOGIN ─────────────────────────────────────────
+    const loginForm = document.getElementById('login-form');
+    const loginBtn  = document.getElementById('login-btn');
+    const loginErr  = document.getElementById('login-error');
+
+    loginForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const password = document.getElementById('password-input').value;
+      loginErr.classList.remove('visible');
+      loginBtn.disabled = true;
+      loginBtn.textContent = 'Wird geprüft…';
+
+      try {
+        const res  = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showView('view-upload');
+        } else {
+          loginErr.classList.add('visible');
+          loginBtn.disabled = false;
+          loginBtn.textContent = 'Weiter →';
+        }
+      } catch {
+        loginErr.textContent = 'Verbindungsfehler. Bitte Seite neu laden.';
+        loginErr.classList.add('visible');
+        loginBtn.disabled = false;
+        loginBtn.textContent = 'Weiter →';
+      }
+    });
+    document.getElementById('password-input').addEventListener('input', () => loginErr.classList.remove('visible'));
+
+    // ── UPLOAD ────────────────────────────────────────
+    const uploadZone  = document.getElementById('upload-zone');
+    const fileInput   = document.getElementById('file-input');
+    const fileNameEl  = document.getElementById('file-name');
+    const uploadBtn   = document.getElementById('upload-btn');
+    const uploadErr   = document.getElementById('upload-error');
+
+    uploadZone.addEventListener('click', () => fileInput.click());
+
+    uploadZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      uploadZone.classList.add('dragover');
+    });
+    uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+    uploadZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      uploadZone.classList.remove('dragover');
+      const file = e.dataTransfer.files[0];
+      if (file) setFile(file);
+    });
+
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files[0]) setFile(fileInput.files[0]);
+    });
+
+    function setFile(file) {
+      fileNameEl.textContent = '✓ ' + file.name;
+      uploadBtn.disabled = false;
+      uploadErr.classList.remove('visible');
+      fileInput._selectedFile = file;
+    }
+
+    uploadBtn.addEventListener('click', async () => {
+      const file = fileInput.files[0] || fileInput._selectedFile;
+      if (!file) return;
+
+      uploadErr.classList.remove('visible');
+      startLoading();
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        const res  = await fetch('/api/extract', { method: 'POST', body: formData });
+        const data = await res.json();
+
+        if (data.error) {
+          finishLoading();
+          showView('view-upload');
+          uploadErr.textContent = data.message || 'Fehler bei der Analyse.';
+          uploadErr.classList.add('visible');
+        } else {
+          extractedData = data;
+          finishLoading(() => showConfirm(data));
+        }
+      } catch {
+        finishLoading();
+        showView('view-upload');
+        uploadErr.textContent = 'Verbindungsfehler. Bitte erneut versuchen.';
+        uploadErr.classList.add('visible');
+      }
+    });
+
+    // ── LOADING ANIMATION ─────────────────────────────
+    const progressBar   = document.getElementById('progress-bar');
+    const progressLabel = document.getElementById('progress-label');
+    const loadingTexts  = [
+      'Dokument wird analysiert...',
+      'Kategorien werden erkannt...',
+      'Fragen werden generiert...',
+      'Struktur wird aufgebaut...'
+    ];
+
+    let progressInterval = null;
+    let textInterval     = null;
+    let currentProgress  = 0;
+    let textIndex        = 0;
+
+    function startLoading() {
+      showView('view-loading');
+      currentProgress = 0;
+      textIndex = 0;
+      progressBar.style.width = '0%';
+      progressLabel.textContent = loadingTexts[0];
+
+      // Progress: slowly creep to 88% then wait for API
+      progressInterval = setInterval(() => {
+        if (currentProgress < 88) {
+          const step = currentProgress < 30 ? 3 : currentProgress < 60 ? 1.5 : 0.5;
+          currentProgress = Math.min(currentProgress + step, 88);
+          progressBar.style.width = currentProgress + '%';
+        }
+      }, 400);
+
+      // Cycle loading text
+      textInterval = setInterval(() => {
+        textIndex = (textIndex + 1) % loadingTexts.length;
+        progressLabel.style.opacity = '0';
+        setTimeout(() => {
+          progressLabel.textContent = loadingTexts[textIndex];
+          progressLabel.style.opacity = '1';
+        }, 300);
+      }, 2800);
+    }
+
+    function finishLoading(callback) {
+      clearInterval(progressInterval);
+      clearInterval(textInterval);
+      progressLabel.textContent = 'Analyse abgeschlossen ✓';
+      progressLabel.style.opacity = '1';
+      progressBar.style.width = '100%';
+      setTimeout(() => {
+        if (callback) callback();
+      }, 700);
+    }
+
+    // ── CONFIRM VIEW ──────────────────────────────────
+    function showConfirm(data) {
+      document.getElementById('confirm-level-name').textContent = data.level || 'Level';
+      document.getElementById('confirm-heading').textContent =
+        `${data.level} — ${data.categories.length} Kategorien erkannt`;
+
+      const grid = document.getElementById('categories-grid');
+      grid.innerHTML = '';
+
+      data.categories.forEach((cat, i) => {
+        const card = document.createElement('div');
+        card.className = 'category-card';
+        card.style.animationDelay = (i * 0.06) + 's';
+
+        const name = document.createElement('div');
+        name.className = 'category-name';
+        name.textContent = cat.name;
+
+        const list = document.createElement('ul');
+        list.className = 'bullet-list';
+        (cat.bullets || []).forEach(b => {
+          const li = document.createElement('li');
+          li.textContent = b;
+          list.appendChild(li);
+        });
+
+        card.appendChild(name);
+        card.appendChild(list);
+        grid.appendChild(card);
+      });
+
+      showView('view-confirm');
+    }
+
+    document.getElementById('confirm-btn').addEventListener('click', () => {
+      mentorRatings = [];
+      menteeRatings = [];
+      buildSurvey('mentor');
+      showView('view-survey');
+      window.scrollTo(0, 0);
+    });
+
+    document.getElementById('reupload-btn').addEventListener('click', () => {
+      fileInput.value = '';
+      fileInput._selectedFile = null;
+      fileNameEl.textContent = '';
+      uploadBtn.disabled = true;
+      uploadErr.classList.remove('visible');
+      showView('view-upload');
+    });
+
+    // ── SURVEY ────────────────────────────────────────
+    function updateSliderFill(slider, isMentor) {
+      const pct = (parseInt(slider.value) / 10) * 100;
+      const color = isMentor ? '#00E9B9' : '#5CE1E6';
+      slider.style.background =
+        `linear-gradient(to right, ${color} 0%, ${color} ${pct}%, rgba(255,255,255,0.12) ${pct}%)`;
+    }
+
+    function buildSurvey(phase) {
+      const isMentor = phase === 'mentor';
+
+      // Role badge
+      const badge = document.getElementById('survey-role-badge');
+      badge.className = 'role-badge ' + phase;
+      badge.textContent = isMentor ? 'Mentor-Bewertung' : 'Mentee-Bewertung';
+
+      // Header
+      document.getElementById('survey-title').textContent =
+        isMentor ? 'Mentor-Bewertung' : 'Mentee-Bewertung';
+      document.getElementById('survey-level-display').textContent = extractedData.level;
+      document.getElementById('survey-instructions').textContent = isMentor
+        ? 'Bewerte jede Kompetenz auf einer Skala von 0–10. Wenn fertig, übergib das Gerät an den Mentee.'
+        : 'Bewerte jede Kompetenz ehrlich auf einer Skala von 0–10. Deine Selbsteinschätzung ist gefragt.';
+
+      // Build question rows
+      const container = document.getElementById('survey-questions');
+      container.innerHTML = '';
+
+      extractedData.categories.forEach((cat, catIdx) => {
+        const section = document.createElement('div');
+        section.className = 'survey-category';
+
+        const catName = document.createElement('div');
+        catName.className = 'survey-cat-name';
+        catName.textContent = cat.name;
+        section.appendChild(catName);
+
+        (cat.bullets || []).forEach((bullet, bulletIdx) => {
+          const stored = isMentor
+            ? (mentorRatings[catIdx]?.[bulletIdx] ?? 5)
+            : (menteeRatings[catIdx]?.[bulletIdx] ?? 5);
+
+          const row = document.createElement('div');
+          row.className = 'slider-row';
+
+          const label = document.createElement('div');
+          label.className = 'slider-label';
+          label.textContent = bullet;
+
+          const control = document.createElement('div');
+          control.className = 'slider-control';
+
+          const minEl = document.createElement('span');
+          minEl.className = 'slider-minmax';
+          minEl.textContent = '0';
+
+          const slider = document.createElement('input');
+          slider.type = 'range';
+          slider.min = 0; slider.max = 10; slider.step = 1;
+          slider.value = stored;
+          slider.className = isMentor ? 'mentor-slider' : 'mentee-slider';
+
+          const maxEl = document.createElement('span');
+          maxEl.className = 'slider-minmax';
+          maxEl.textContent = '10';
+
+          const valueEl = document.createElement('div');
+          valueEl.className = 'slider-value ' + (isMentor ? 'teal' : 'cyan');
+          valueEl.textContent = stored;
+
+          updateSliderFill(slider, isMentor);
+
+          slider.addEventListener('input', () => {
+            const v = parseInt(slider.value);
+            valueEl.textContent = v;
+            updateSliderFill(slider, isMentor);
+            if (isMentor) {
+              if (!mentorRatings[catIdx]) mentorRatings[catIdx] = [];
+              mentorRatings[catIdx][bulletIdx] = v;
+            } else {
+              if (!menteeRatings[catIdx]) menteeRatings[catIdx] = [];
+              menteeRatings[catIdx][bulletIdx] = v;
+            }
+          });
+
+          control.appendChild(minEl);
+          control.appendChild(slider);
+          control.appendChild(maxEl);
+          control.appendChild(valueEl);
+          row.appendChild(label);
+          row.appendChild(control);
+          section.appendChild(row);
+        });
+
+        container.appendChild(section);
+      });
+
+      // Action button
+      const btn = document.getElementById('survey-action-btn');
+      if (isMentor) {
+        btn.textContent = 'Übergabe an Mentee →';
+        btn.onclick = () => {
+          collectAllRatings('mentor');
+          const overlay = document.getElementById('handoff-overlay');
+          overlay.style.display = 'flex';
+          setTimeout(() => {
+            overlay.style.display = 'none';
+            buildSurvey('mentee');
+            window.scrollTo(0, 0);
+          }, 2000);
+        };
+      } else {
+        btn.textContent = 'Auswertung abschließen →';
+        btn.onclick = () => {
+          collectAllRatings('mentee');
+          showResults();
+          window.scrollTo(0, 0);
+        };
+      }
+    }
+
+    function collectAllRatings(phase) {
+      const sliders = document.querySelectorAll('#survey-questions input[type="range"]');
+      let idx = 0;
+      extractedData.categories.forEach((cat, catIdx) => {
+        if (phase === 'mentor') {
+          if (!mentorRatings[catIdx]) mentorRatings[catIdx] = [];
+        } else {
+          if (!menteeRatings[catIdx]) menteeRatings[catIdx] = [];
+        }
+        (cat.bullets || []).forEach((_, bulletIdx) => {
+          const v = parseInt(sliders[idx]?.value ?? 5);
+          if (phase === 'mentor') mentorRatings[catIdx][bulletIdx] = v;
+          else menteeRatings[catIdx][bulletIdx] = v;
+          idx++;
+        });
+      });
+    }
+
+    // ── RESULTS ───────────────────────────────────────
+    let radarChartInstance = null;
+
+    function computeAverages(ratings) {
+      return extractedData.categories.map((cat, catIdx) => {
+        const vals = (cat.bullets || []).map((_, bIdx) => ratings[catIdx]?.[bIdx] ?? 5);
+        if (!vals.length) return 0;
+        return vals.reduce((a, b) => a + b, 0) / vals.length;
+      });
+    }
+
+    function showResults() {
+      const mentorAvgs = computeAverages(mentorRatings);
+      const menteeAvgs = computeAverages(menteeRatings);
+      const labels = extractedData.categories.map(c => c.name);
+
+      document.getElementById('results-level-badge').textContent = extractedData.level;
+
+      buildRadarChart(labels, mentorAvgs, menteeAvgs);
+      buildSummaryCards(labels, mentorAvgs, menteeAvgs);
+      showView('view-results');
+    }
+
+    function buildRadarChart(labels, mentorData, menteeData) {
+      const canvas = document.getElementById('radar-canvas');
+      const ctx = canvas.getContext('2d');
+
+      if (radarChartInstance) {
+        radarChartInstance.destroy();
+        radarChartInstance = null;
+      }
+
+      radarChartInstance = new Chart(ctx, {
+        type: 'radar',
+        data: {
+          labels: labels,
+          datasets: [
+            {
+              label: 'Mentor',
+              data: mentorData,
+              backgroundColor: 'rgba(0,233,185,0.15)',
+              borderColor: '#00E9B9',
+              borderWidth: 2.5,
+              pointBackgroundColor: '#00E9B9',
+              pointBorderColor: 'transparent',
+              pointRadius: 5,
+              pointHoverRadius: 7,
+            },
+            {
+              label: 'Mentee',
+              data: menteeData,
+              backgroundColor: 'rgba(92,225,230,0.15)',
+              borderColor: '#5CE1E6',
+              borderWidth: 2.5,
+              pointBackgroundColor: '#5CE1E6',
+              pointBorderColor: 'transparent',
+              pointRadius: 5,
+              pointHoverRadius: 7,
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          animation: { duration: 900, easing: 'easeInOutQuart' },
+          scales: {
+            r: {
+              min: 0, max: 10,
+              ticks: {
+                stepSize: 2,
+                color: 'rgba(255,255,255,0.3)',
+                backdropColor: 'transparent',
+                font: { family: 'Noto Sans Display', size: 10 }
+              },
+              grid: { color: 'rgba(255,255,255,0.1)' },
+              angleLines: { color: 'rgba(255,255,255,0.12)' },
+              pointLabels: {
+                color: 'rgba(255,255,255,0.88)',
+                font: { family: 'Noto Sans Display', size: 12, weight: '500' }
+              }
+            }
+          },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => ` ${ctx.dataset.label}: ${ctx.raw.toFixed(1)}`
+              }
+            }
+          }
+        }
+      });
+    }
+
+    function buildSummaryCards(labels, mentorAvgs, menteeAvgs) {
+      const grid = document.getElementById('results-summary-grid');
+      grid.innerHTML = '';
+      labels.forEach((label, i) => {
+        const card = document.createElement('div');
+        card.className = 'result-cat-card';
+        card.style.animationDelay = (i * 0.05) + 's';
+        card.innerHTML = `
+          <div class="result-cat-name">${label}</div>
+          <div class="result-scores">
+            <div class="result-score">
+              <span class="score-label">Mentor</span>
+              <span class="score-num teal">${mentorAvgs[i].toFixed(1)}</span>
+            </div>
+            <div class="result-score">
+              <span class="score-label">Mentee</span>
+              <span class="score-num cyan">${menteeAvgs[i].toFixed(1)}</span>
+            </div>
+          </div>
+        `;
+        grid.appendChild(card);
+      });
+    }
+
+    document.getElementById('pdf-btn').addEventListener('click', async () => {
+      const btn = document.getElementById('pdf-btn');
+      btn.textContent = 'PDF wird erstellt …';
+      btn.disabled = true;
+
+      try {
+        const res = await fetch('/api/pdf', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ extractedData, mentorRatings, menteeRatings })
+        });
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.message || 'Serverfehler');
+        }
+
+        const blob = await res.blob();
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href     = url;
+        a.download = `Blueprint_Summit_${extractedData.level || 'Auswertung'}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        btn.textContent = '✓ PDF heruntergeladen';
+        btn.classList.add('btn-success');
+
+        document.getElementById('results-restart-btn').style.display = 'block';
+
+      } catch (err) {
+        console.error('PDF-Fehler:', err);
+        btn.textContent = 'Fehler — erneut versuchen';
+        btn.disabled = false;
+        document.getElementById('results-restart-btn').style.display = 'block';
+      }
+    });
+
+    document.getElementById('results-restart-btn').addEventListener('click', () => {
+      if (radarChartInstance) { radarChartInstance.destroy(); radarChartInstance = null; }
+      extractedData = null;
+      mentorRatings = [];
+      menteeRatings = [];
+      // Reset PDF button for next run
+      const pdfBtn = document.getElementById('pdf-btn');
+      pdfBtn.textContent = 'PDF herunterladen →';
+      pdfBtn.disabled = false;
+      pdfBtn.classList.remove('btn-success');
+      document.getElementById('results-restart-btn').style.display = 'none';
+      // Reset upload
+      fileInput.value = '';
+      fileInput._selectedFile = null;
+      fileNameEl.textContent = '';
+      uploadBtn.disabled = true;
+      uploadErr.classList.remove('visible');
+      showView('view-upload');
+    });
+  </script>
+</body>
+</html>
