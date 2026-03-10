@@ -40,7 +40,7 @@ app.use('/branding_assets', express.static(path.join(__dirname, 'branding_assets
 // ── Login ──────────────────────────────────────────────
 app.post('/api/login', (req, res) => {
   const { password } = req.body;
-  if (password === 'blueprint2024') {
+  if (password === process.env.APP_PASSWORD) {
     res.json({ success: true });
   } else {
     res.status(401).json({ success: false, message: 'Falsches Passwort.' });
