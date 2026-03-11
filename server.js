@@ -3,7 +3,8 @@ const express  = require('express');
 const path     = require('path');
 const fs       = require('fs');
 const multer   = require('multer');
-const Anthropic = require('@anthropic-ai/sdk');
+const Anthropic  = require('@anthropic-ai/sdk');
+const rateLimit  = require('express-rate-limit');
 // puppeteer wird per dynamic import geladen (ESM-Kompatibilität)
 let _puppeteer = null;
 async function getPuppeteer() {
@@ -51,8 +52,36 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/branding_assets', express.static(path.join(__dirname, 'branding_assets')));
 
+// ── Rate Limiting ───────────────────────────────────────
+// Login: max. 10 Versuche pro IP in 15 Minuten → Brute Force Schutz
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Zu viele Versuche. Bitte 15 Minuten warten.' }
+});
+
+// Extraktion: max. 15 Analysen pro IP pro Stunde → API-Credits schützen
+const extractLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: true, message: 'Stundenlimit erreicht. Bitte in einer Stunde erneut versuchen.' }
+});
+
+// PDF: max. 30 PDFs pro IP pro Stunde (kein API-Call, aber trotzdem begrenzen)
+const pdfLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: true, message: 'Zu viele PDF-Anfragen. Bitte kurz warten.' }
+});
+
 // ── Login ──────────────────────────────────────────────
-app.post('/api/login', (req, res) => {
+app.post('/api/login', loginLimiter, (req, res) => {
   const { password } = req.body;
   if (password === process.env.APP_PASSWORD) {
     res.json({ success: true });
@@ -62,7 +91,7 @@ app.post('/api/login', (req, res) => {
 });
 
 // ── KI-Extraktion ──────────────────────────────────────
-app.post('/api/extract', upload.single('file'), async (req, res) => {
+app.post('/api/extract', extractLimiter, upload.single('file'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: true, message: 'Keine Datei hochgeladen.' });
   }
@@ -158,7 +187,7 @@ function extractJSON(text) {
 }
 
 // ── PDF-Export ─────────────────────────────────────────
-app.post('/api/pdf', async (req, res) => {
+app.post('/api/pdf', pdfLimiter, async (req, res) => {
   const { extractedData, mentorRatings, menteeRatings } = req.body;
   if (!extractedData || !mentorRatings || !menteeRatings) {
     return res.status(400).json({ error: true, message: 'Fehlende Daten.' });
