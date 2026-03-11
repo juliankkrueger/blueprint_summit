@@ -14,12 +14,26 @@ async function getPuppeteer() {
   return _puppeteer;
 }
 
+// Chart.js beim Start vorladen → kein CDN-Aufruf beim PDF-Rendering
+let chartJsSource = null;
+(async () => {
+  try {
+    const res = await fetch('https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js');
+    if (res.ok) {
+      chartJsSource = await res.text();
+      console.log('Chart.js vorgeladen ✓');
+    }
+  } catch (err) {
+    console.warn('Chart.js Vorladung fehlgeschlagen, nutze CDN als Fallback:', err.message);
+  }
+})();
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB
+  limits: { fileSize: 8 * 1024 * 1024 }, // 8 MB
   fileFilter: (req, file, cb) => {
     const allowed = ['application/pdf', 'image/png', 'image/jpeg', 'image/webp'];
     if (allowed.includes(file.mimetype)) {
@@ -92,12 +106,18 @@ Falls kein klares Kompetenzmodell erkannt werden kann, antworte mit:
   }
 
   try {
-    const response = await client.messages.create({
+    const API_TIMEOUT_MS = 55000; // 55 Sekunden
+    const apiCall = client.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 4096,
       system: systemPrompt,
       messages: [{ role: 'user', content: messageContent }]
     });
+    const timeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('TIMEOUT')), API_TIMEOUT_MS)
+    );
+
+    const response = await Promise.race([apiCall, timeout]);
 
     const rawText = response.content[0].text.trim();
     const parsed = extractJSON(rawText);
@@ -106,7 +126,15 @@ Falls kein klares Kompetenzmodell erkannt werden kann, antworte mit:
     }
     res.json(parsed);
   } catch (err) {
-    console.error('Claude API Fehler:', err);
+    if (err.message === 'TIMEOUT') {
+      console.error('Claude API Timeout — Datei zu groß oder zu komplex.');
+      return res.status(504).json({ error: true, message: 'Zeitüberschreitung — die Datei ist zu groß oder komplex. Bitte eine kleinere, niedrig aufgelöste Datei hochladen (max. 8 MB, idealerweise 1 Seite).' });
+    }
+    if (err.status === 429) {
+      console.error('Claude API Rate Limit:', err.message);
+      return res.status(429).json({ error: true, message: 'Zu viele Anfragen gleichzeitig — bitte kurz warten und erneut versuchen.' });
+    }
+    console.error('Claude API Fehler [', err.status || err.name, ']:', err.message);
     res.status(500).json({ error: true, message: 'API-Fehler. Bitte erneut versuchen.' });
   }
 });
@@ -153,7 +181,8 @@ app.post('/api/pdf', async (req, res) => {
     const puppeteer = await getPuppeteer();
     browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
     const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: 'networkidle0' });
+    // Bei inline Chart.js reicht domcontentloaded — kein CDN-Aufruf nötig
+    await page.setContent(html, { waitUntil: chartJsSource ? 'domcontentloaded' : 'networkidle0' });
     const pdfBuffer = await page.pdf({
       format: 'A4',
       printBackground: true,
@@ -236,8 +265,12 @@ function generatePdfHtml(data, mentorAvgs, menteeAvgs, mentorRatings, menteeRati
     </table>`;
   }).join('');
 
+  const chartScriptTag = chartJsSource
+    ? `<script>${chartJsSource}</script>`
+    : `<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>`;
+
   return `<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8">
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+${chartScriptTag}
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{background:#072330;color:#fff;font-family:'Helvetica Neue',Arial,sans-serif;padding:36px;font-size:12px;line-height:1.5;}

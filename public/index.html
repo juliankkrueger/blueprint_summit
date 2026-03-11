@@ -641,14 +641,30 @@
           </svg>
         </div>
         <div class="upload-title">Datei hier ablegen oder klicken</div>
-        <div class="upload-hint">PDF · PNG · JPG — max. 20 MB</div>
+        <div class="upload-hint">PDF · PNG · JPG — max. 8 MB</div>
         <div class="file-selected" id="file-name"></div>
       </div>
       <input type="file" id="file-input" accept=".pdf,.png,.jpg,.jpeg,.webp" />
 
+      <!-- Upload-Tipps -->
+      <div style="background:rgba(0,233,185,0.06); border:1px solid rgba(0,233,185,0.2); border-radius:12px; padding:0.9rem 1rem; margin-bottom:1rem; font-size:0.78rem; color:rgba(255,255,255,0.65); line-height:1.6;">
+        <div style="font-family:'Unbounded',sans-serif; font-size:0.7rem; color:var(--teal); letter-spacing:.05em; text-transform:uppercase; margin-bottom:0.4rem;">Tipps für den Upload</div>
+        <ul style="padding-left:1.1rem; margin:0;">
+          <li>Lade <strong style="color:rgba(255,255,255,0.85);">nur eine Seite</strong> des Kompetenzmodells hoch — kein mehrseitiges Dokument.</li>
+          <li>Datei zu groß? Exportiere als <strong style="color:rgba(255,255,255,0.85);">niedrig aufgelöstes PNG</strong> oder komprimiere dein PDF (z.B. mit ilovepdf.com).</li>
+          <li>Maximale Dateigröße: <strong style="color:rgba(255,255,255,0.85);">8 MB</strong>.</li>
+        </ul>
+      </div>
+
       <button class="btn-primary" id="upload-btn" disabled style="animation:none;">
         Formular erstellen →
       </button>
+
+      <!-- Session-Hinweis -->
+      <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:12px; padding:0.85rem 1rem; margin-top:1rem; font-size:0.76rem; color:rgba(255,255,255,0.5); line-height:1.6; text-align:center;">
+        ⚠️ <strong style="color:rgba(255,255,255,0.7);">Wichtig:</strong> Daten werden <em>nicht gespeichert</em>. Bitte die gesamte Session — Mentor-Bewertung, Mentee-Bewertung und PDF-Download — in einem Durchgang abschließen.
+      </div>
+
       <div class="card-footer">Blueprint Summit · 14.03.2026</div>
     </div>
   </div>
@@ -789,6 +805,11 @@
       <!-- Kategorie-Scores -->
       <div class="results-summary-grid" id="results-summary-grid"></div>
 
+      <!-- Hinweis: PDF jetzt herunterladen -->
+      <div style="background:rgba(0,233,185,0.07); border:1px solid rgba(0,233,185,0.25); border-radius:12px; padding:0.85rem 1.1rem; margin-bottom:1.2rem; font-size:0.78rem; color:rgba(255,255,255,0.65); line-height:1.6; text-align:center;">
+        💾 <strong style="color:var(--teal);">Jetzt PDF herunterladen!</strong> Die Ergebnisse werden nicht gespeichert — lade das PDF herunter, bevor du die Seite schließt oder ein neues Level startest.
+      </div>
+
       <!-- Aktions-Buttons -->
       <div class="results-actions">
         <button class="btn-primary" id="pdf-btn">PDF herunterladen →</button>
@@ -902,6 +923,16 @@
     });
 
     function setFile(file) {
+      const MAX_BYTES = 8 * 1024 * 1024; // 8 MB
+      if (file.size > MAX_BYTES) {
+        uploadErr.textContent = `Datei zu groß (${(file.size / 1024 / 1024).toFixed(1)} MB). Bitte max. 8 MB hochladen — am besten als niedrig aufgelöstes PNG oder komprimiertes PDF (1 Seite).`;
+        uploadErr.classList.add('visible');
+        fileInput.value = '';
+        fileInput._selectedFile = null;
+        fileNameEl.textContent = '';
+        uploadBtn.disabled = true;
+        return;
+      }
       fileNameEl.textContent = '✓ ' + file.name;
       uploadBtn.disabled = false;
       uploadErr.classList.remove('visible');
