@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Blueprint Summit — Survey Architect</title>
+  <title>Blueprint Summit — Mentee Score</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@400;700;900&family=Noto+Sans+Display:wght@300;400;500;600&display=swap" rel="stylesheet" />
@@ -526,18 +526,35 @@
       box-shadow: none !important;
     }
 
+    /* ── Touch & Cross-Browser ── */
+    /* Kein blaues Tap-Highlight auf iOS/Android */
+    * { -webkit-tap-highlight-color: transparent; }
+    /* 300ms Tap-Verzögerung entfernen auf Buttons & interaktiven Elementen */
+    button, input, label, .upload-zone {
+      touch-action: manipulation;
+    }
+    /* Firefox: horizontalen Overflow durch Scrollbar verhindern */
+    html { overflow-x: hidden; }
+
     /* ── Responsive ── */
     @media (max-width: 640px) {
       .card { padding: 1.8rem 1.2rem; }
       .categories-grid { grid-template-columns: 1fr; }
       .slider-row { flex-direction: column; align-items: flex-start; gap: 0.4rem; }
       .slider-control { width: 100%; justify-content: space-between; }
-      input[type="range"] { flex: 1; min-width: 0; }
+      input[type="range"] { flex: 1; min-width: 0; width: 100%; }
       .survey-header { flex-direction: column; }
       .survey-instructions { text-align: left; max-width: none; }
       .results-summary-grid { grid-template-columns: 1fr 1fr; }
       .results-chart-wrap { max-width: 100%; }
       .heading { font-size: clamp(1.1rem, 5vw, 1.5rem); }
+      /* Größerer Thumb für Touch */
+      input[type="range"]::-webkit-slider-thumb { width: 26px; height: 26px; }
+      input[type="range"]::-moz-range-thumb { width: 26px; height: 26px; }
+    }
+    @media (max-width: 380px) {
+      .card { padding: 1.4rem 0.9rem; }
+      .results-summary-grid { grid-template-columns: 1fr; }
     }
     @media (max-width: 400px) {
       .results-summary-grid { grid-template-columns: 1fr; }
@@ -545,6 +562,13 @@
     /* iPad landscape: wider slider */
     @media (min-width: 641px) and (max-width: 1024px) {
       input[type="range"] { width: 200px; }
+    }
+    /* Animationen für Nutzer die das bevorzugen deaktivieren */
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+      }
     }
   </style>
 </head>
@@ -590,7 +614,7 @@
       <div class="logo-wrap">
         <img src="/branding_assets/brand_guide/Logos/blueprint_summit_logo_weiss.png" alt="Blueprint Summit" />
       </div>
-      <h1 class="heading">Survey Architect</h1>
+      <h1 class="heading">Mentee Score</h1>
       <p class="subheading">Kompetenzmodell-Analyse<br>für Mentor &amp; Mentee</p>
       <div class="divider"></div>
 
@@ -647,11 +671,11 @@
       <input type="file" id="file-input" accept=".pdf,.png,.jpg,.jpeg,.webp" />
 
       <!-- Upload-Tipps -->
-      <div style="background:rgba(0,233,185,0.06); border:1px solid rgba(0,233,185,0.2); border-radius:12px; padding:0.9rem 1rem; margin-bottom:1rem; font-size:0.78rem; color:rgba(255,255,255,0.65); line-height:1.6;">
+      <div style="background:rgba(0,233,185,0.06); border:1px solid rgba(0,233,185,0.2); border-radius:12px; padding:0.9rem 1rem; margin-bottom:1rem; font-size:0.78rem; color:rgba(255,255,255,0.65); line-height:1.6; text-align:left;">
         <div style="font-family:'Unbounded',sans-serif; font-size:0.7rem; color:var(--teal); letter-spacing:.05em; text-transform:uppercase; margin-bottom:0.4rem;">Tipps für den Upload</div>
-        <ul style="padding-left:1.1rem; margin:0;">
-          <li>Lade <strong style="color:rgba(255,255,255,0.85);">nur eine Seite</strong> des Kompetenzmodells hoch — kein mehrseitiges Dokument.</li>
-          <li>Datei zu groß? Exportiere als <strong style="color:rgba(255,255,255,0.85);">niedrig aufgelöstes PNG</strong> oder komprimiere dein PDF (z.B. mit ilovepdf.com).</li>
+        <ul style="padding-left:1.2rem; margin:0; text-align:left;">
+          <li style="margin-bottom:0.3rem;">Lade <strong style="color:rgba(255,255,255,0.85);">nur eine Seite</strong> des Kompetenzmodells hoch — kein mehrseitiges Dokument.</li>
+          <li style="margin-bottom:0.3rem;">Datei zu groß? Exportiere als <strong style="color:rgba(255,255,255,0.85);">niedrig aufgelöstes PNG</strong> oder komprimiere dein PDF (z.B. mit ilovepdf.com).</li>
           <li>Maximale Dateigröße: <strong style="color:rgba(255,255,255,0.85);">8 MB</strong>.</li>
         </ul>
       </div>
