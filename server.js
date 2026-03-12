@@ -1,5 +1,6 @@
 require('dotenv').config();
 const express  = require('express');
+const crypto   = require('crypto');
 const path     = require('path');
 const fs       = require('fs');
 const multer   = require('multer');
@@ -31,6 +32,16 @@ let chartJsSource = null;
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+const activeSessions = new Set();
+
+function requireAuth(req, res, next) {
+  const token = req.headers['x-session-token'];
+  if (!token || !activeSessions.has(token)) {
+    return res.status(401).json({ error: true, message: 'Nicht authentifiziert' });
+  }
+  next();
+}
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -84,14 +95,16 @@ const pdfLimiter = rateLimit({
 app.post('/api/login', loginLimiter, (req, res) => {
   const { password } = req.body;
   if (password === process.env.APP_PASSWORD) {
-    res.json({ success: true });
+    const token = crypto.randomBytes(32).toString('hex');
+    activeSessions.add(token);
+    res.json({ success: true, token });
   } else {
     res.status(401).json({ success: false, message: 'Falsches Passwort.' });
   }
 });
 
 // ── KI-Extraktion ──────────────────────────────────────
-app.post('/api/extract', extractLimiter, upload.single('file'), async (req, res) => {
+app.post('/api/extract', requireAuth, extractLimiter, upload.single('file'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: true, message: 'Keine Datei hochgeladen.' });
   }
@@ -187,7 +200,7 @@ function extractJSON(text) {
 }
 
 // ── PDF-Export ─────────────────────────────────────────
-app.post('/api/pdf', pdfLimiter, async (req, res) => {
+app.post('/api/pdf', requireAuth, pdfLimiter, async (req, res) => {
   const { extractedData, mentorRatings, menteeRatings } = req.body;
   if (!extractedData || !mentorRatings || !menteeRatings) {
     return res.status(400).json({ error: true, message: 'Fehlende Daten.' });

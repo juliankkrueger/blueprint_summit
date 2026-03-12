@@ -862,6 +862,7 @@
     let extractedData  = null;
     let mentorRatings  = [];   // mentorRatings[catIdx][bulletIdx] = 0–10
     let menteeRatings  = [];
+    let sessionToken   = null;
 
     // ── View helpers ──────────────────────────────────
     const views = ['view-login','view-upload','view-loading','view-confirm','view-survey','view-results'];
@@ -906,6 +907,7 @@
         });
         const data = await res.json();
         if (data.success) {
+          sessionToken = data.token;
           showView('view-upload');
         } else {
           loginErr.classList.add('visible');
@@ -974,7 +976,7 @@
       formData.append('file', file);
 
       try {
-        const res  = await fetch('/api/extract', { method: 'POST', body: formData });
+        const res  = await fetch('/api/extract', { method: 'POST', headers: { 'x-session-token': sessionToken }, body: formData });
         const data = await res.json();
 
         if (data.error) {
@@ -1363,7 +1365,7 @@
       try {
         const res = await fetch('/api/pdf', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'x-session-token': sessionToken },
           body: JSON.stringify({ extractedData, mentorRatings, menteeRatings })
         });
 
