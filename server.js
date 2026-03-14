@@ -6,14 +6,34 @@ const fs       = require('fs');
 const multer   = require('multer');
 const Anthropic  = require('@anthropic-ai/sdk');
 const rateLimit  = require('express-rate-limit');
-// puppeteer wird per dynamic import geladen (ESM-Kompatibilität)
+
+// ── Puppeteer Browser-Pool ──────────────────────────────
+// Ein Browser bleibt offen, nur Pages werden geöffnet/geschlossen.
+// Drastisch ressourcenschonender als pro Anfrage einen neuen Browser zu starten.
 let _puppeteer = null;
+let _browser   = null;
+let _pdfQueue  = 0;           // aktive PDF-Renders
+const PDF_CONCURRENCY = 3;   // max. gleichzeitige PDFs
+
 async function getPuppeteer() {
   if (!_puppeteer) {
     const mod = await import('puppeteer');
     _puppeteer = mod.default;
   }
   return _puppeteer;
+}
+
+async function getBrowser() {
+  if (!_browser || !_browser.connected) {
+    const puppeteer = await getPuppeteer();
+    _browser = await puppeteer.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+    });
+    console.log('Puppeteer Browser gestartet ✓');
+    _browser.on('disconnected', () => { _browser = null; });
+  }
+  return _browser;
 }
 
 // Chart.js beim Start vorladen → kein CDN-Aufruf beim PDF-Rendering
@@ -33,11 +53,41 @@ let chartJsSource = null;
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const activeSessions = new Set();
+// ── Session-Persistenz ──────────────────────────────────
+// Sessions werden in einer JSON-Datei gespeichert → überleben Server-Restarts.
+const SESSION_FILE = path.join(__dirname, '.sessions.json');
+const SESSION_TTL  = 24 * 60 * 60 * 1000; // 24 Stunden
+
+function loadSessions() {
+  try {
+    const raw = fs.readFileSync(SESSION_FILE, 'utf8');
+    const data = JSON.parse(raw);
+    const now  = Date.now();
+    // Abgelaufene Sessions beim Laden entfernen
+    const valid = {};
+    for (const [token, ts] of Object.entries(data)) {
+      if (now - ts < SESSION_TTL) valid[token] = ts;
+    }
+    return valid;
+  } catch {
+    return {};
+  }
+}
+
+function saveSessions(sessions) {
+  try {
+    fs.writeFileSync(SESSION_FILE, JSON.stringify(sessions), 'utf8');
+  } catch (err) {
+    console.warn('Sessions konnten nicht gespeichert werden:', err.message);
+  }
+}
+
+let activeSessions = loadSessions();
+console.log(`Sessions geladen: ${Object.keys(activeSessions).length} aktive Sessions`);
 
 function requireAuth(req, res, next) {
   const token = req.headers['x-session-token'];
-  if (!token || !activeSessions.has(token)) {
+  if (!token || !activeSessions[token]) {
     return res.status(401).json({ error: true, message: 'Nicht authentifiziert' });
   }
   next();
@@ -58,45 +108,99 @@ const upload = multer({
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/branding_assets', express.static(path.join(__dirname, 'branding_assets')));
 
 // ── Rate Limiting ───────────────────────────────────────
-// Login: max. 10 Versuche pro IP in 15 Minuten → Brute Force Schutz
+// WICHTIG: Limits sind für Event-Betrieb mit shared IP (Corporate WLAN) ausgelegt.
+// Bei shared IP teilen sich alle Nutzer hinter einem Router eine IP → Limits müssen
+// entsprechend hoch sein, sonst werden legitime Nutzer fälschlicherweise blockiert.
+
+// Login: 500 Versuche pro IP in 15 Minuten
+// (40 Nutzer × mehrere Versuche, alle hinter einer IP)
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: 500,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { success: false, message: 'Zu viele Versuche. Bitte 15 Minuten warten.' }
+  message: { success: false, message: 'Zu viele Versuche. Bitte kurz warten.' }
 });
 
-// Extraktion: max. 15 Analysen pro IP pro Stunde → API-Credits schützen
+// Extraktion: 200 Analysen pro IP pro Stunde
+// (40 Nutzer × je mehrere Uploads)
 const extractLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
-  max: 15,
+  max: 200,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: true, message: 'Stundenlimit erreicht. Bitte in einer Stunde erneut versuchen.' }
+  message: { error: true, message: 'Stundenlimit erreicht. Bitte kurz warten.' }
 });
 
-// PDF: max. 30 PDFs pro IP pro Stunde (kein API-Call, aber trotzdem begrenzen)
+// PDF: 150 PDFs pro IP pro Stunde
 const pdfLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
-  max: 30,
+  max: 150,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: true, message: 'Zu viele PDF-Anfragen. Bitte kurz warten.' }
 });
+
+// ── API-Concurrency-Limit ───────────────────────────────
+// Max. 5 gleichzeitige Claude-API-Calls → verhindert Anthropic Rate Limits.
+// Weitere Anfragen warten in einer Queue (werden nicht abgelehnt).
+const API_CONCURRENCY = 5;
+let activeApiCalls = 0;
+const apiWaitQueue = [];
+
+function acquireApiSlot() {
+  return new Promise(resolve => {
+    if (activeApiCalls < API_CONCURRENCY) {
+      activeApiCalls++;
+      resolve();
+    } else {
+      apiWaitQueue.push(resolve);
+    }
+  });
+}
+
+function releaseApiSlot() {
+  if (apiWaitQueue.length > 0) {
+    const next = apiWaitQueue.shift();
+    next();
+  } else {
+    activeApiCalls--;
+  }
+}
+
+// ── Claude API mit Retry bei 429 ───────────────────────
+async function claudeWithRetry(params, maxRetries = 3) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await client.messages.create(params);
+    } catch (err) {
+      const is429 = err.status === 429;
+      const isOverload = err.status === 529;
+      if ((is429 || isOverload) && attempt < maxRetries) {
+        // Exponential Backoff: 2s, 4s, 8s
+        const waitMs = Math.pow(2, attempt + 1) * 1000;
+        console.warn(`Claude API ${err.status} — warte ${waitMs}ms (Versuch ${attempt + 1}/${maxRetries})`);
+        await new Promise(r => setTimeout(r, waitMs));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
 
 // ── Login ──────────────────────────────────────────────
 app.post('/api/login', loginLimiter, (req, res) => {
   const { password } = req.body;
   if (password === process.env.APP_PASSWORD) {
     const token = crypto.randomBytes(32).toString('hex');
-    activeSessions.add(token);
+    activeSessions[token] = Date.now();
+    saveSessions(activeSessions);
     res.json({ success: true, token });
   } else {
     res.status(401).json({ success: false, message: 'Falsches Passwort.' });
@@ -147,9 +251,12 @@ Falls kein klares Kompetenzmodell erkannt werden kann, antworte mit:
     ];
   }
 
+  // Slot in der Concurrency-Queue holen (max. 5 gleichzeitige Calls)
+  await acquireApiSlot();
+
   try {
-    const API_TIMEOUT_MS = 55000; // 55 Sekunden
-    const apiCall = client.messages.create({
+    const API_TIMEOUT_MS = 90000; // 90 Sekunden (erhöht wegen Queue-Wartezeit)
+    const apiCall = claudeWithRetry({
       model: 'claude-sonnet-4-6',
       max_tokens: 4096,
       system: systemPrompt,
@@ -170,14 +277,16 @@ Falls kein klares Kompetenzmodell erkannt werden kann, antworte mit:
   } catch (err) {
     if (err.message === 'TIMEOUT') {
       console.error('Claude API Timeout — Datei zu groß oder zu komplex.');
-      return res.status(504).json({ error: true, message: 'Zeitüberschreitung — die Datei ist zu groß oder komplex. Bitte eine kleinere, niedrig aufgelöste Datei hochladen (max. 8 MB, idealerweise 1 Seite).' });
+      return res.status(504).json({ error: true, message: 'Zeitüberschreitung — die Datei ist zu groß oder komplex. Bitte eine kleinere Datei hochladen (max. 8 MB, idealerweise 1 Seite).' });
     }
-    if (err.status === 429) {
-      console.error('Claude API Rate Limit:', err.message);
-      return res.status(429).json({ error: true, message: 'Zu viele Anfragen gleichzeitig — bitte kurz warten und erneut versuchen.' });
+    if (err.status === 429 || err.status === 529) {
+      console.error('Claude API überlastet nach allen Retries:', err.message);
+      return res.status(429).json({ error: true, message: 'KI momentan sehr ausgelastet — bitte 30 Sekunden warten und erneut versuchen.' });
     }
     console.error('Claude API Fehler [', err.status || err.name, ']:', err.message);
     res.status(500).json({ error: true, message: 'API-Fehler. Bitte erneut versuchen.' });
+  } finally {
+    releaseApiSlot();
   }
 });
 
@@ -206,6 +315,12 @@ app.post('/api/pdf', requireAuth, pdfLimiter, async (req, res) => {
     return res.status(400).json({ error: true, message: 'Fehlende Daten.' });
   }
 
+  // Concurrency-Check: max. 3 PDFs gleichzeitig rendern
+  if (_pdfQueue >= PDF_CONCURRENCY) {
+    return res.status(503).json({ error: true, message: 'PDF-Erstellung kurz ausgelastet — bitte 10 Sekunden warten und erneut versuchen.' });
+  }
+  _pdfQueue++;
+
   const avg = (ratings, catIdx, bullets) => {
     const vals = (bullets || []).map((_, bIdx) => ratings[catIdx]?.[bIdx] ?? 5);
     return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
@@ -218,19 +333,18 @@ app.post('/api/pdf', requireAuth, pdfLimiter, async (req, res) => {
   const logoB64  = fs.readFileSync(logoPath).toString('base64');
   const html     = generatePdfHtml(extractedData, mentorAvgs, menteeAvgs, mentorRatings, menteeRatings, logoB64);
 
-  let browser;
+  let page;
   try {
-    const puppeteer = await getPuppeteer();
-    browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
-    const page = await browser.newPage();
-    // Bei inline Chart.js reicht domcontentloaded — kein CDN-Aufruf nötig
+    // Shared Browser-Pool: nur neue Page öffnen, kein neuer Browser
+    const browser = await getBrowser();
+    page = await browser.newPage();
     await page.setContent(html, { waitUntil: chartJsSource ? 'domcontentloaded' : 'networkidle0' });
     const pdfBuffer = await page.pdf({
       format: 'A4',
       printBackground: true,
       margin: { top: '14mm', bottom: '14mm', left: '14mm', right: '14mm' }
     });
-    await browser.close();
+    await page.close();
 
     const safe     = (extractedData.level || 'Level').replace(/[^a-zA-Z0-9äöüÄÖÜß_-]/g, '_');
     const dateStr  = new Date().toISOString().slice(0, 10);
@@ -240,9 +354,11 @@ app.post('/api/pdf', requireAuth, pdfLimiter, async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(pdfBuffer);
   } catch (err) {
-    if (browser) await browser.close().catch(() => {});
+    if (page) await page.close().catch(() => {});
     console.error('PDF-Fehler:', err);
     res.status(500).json({ error: true, message: 'PDF konnte nicht erstellt werden. Bitte erneut versuchen.' });
+  } finally {
+    _pdfQueue--;
   }
 });
 
