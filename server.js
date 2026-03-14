@@ -12,8 +12,32 @@ const rateLimit  = require('express-rate-limit');
 // Drastisch ressourcenschonender als pro Anfrage einen neuen Browser zu starten.
 let _puppeteer = null;
 let _browser   = null;
-let _pdfQueue  = 0;           // aktive PDF-Renders
-const PDF_CONCURRENCY = 3;   // max. gleichzeitige PDFs
+let _pdfActive  = 0;          // aktive PDF-Renders
+const PDF_CONCURRENCY  = 3;  // max. gleichzeitige PDFs
+const PDF_QUEUE_MAX    = 40; // max. wartende PDF-Requests (danach ablehnen)
+const pdfWaitQueue     = [];  // wie API-Queue: Requests warten statt abgelehnt zu werden
+
+function acquirePdfSlot() {
+  return new Promise((resolve, reject) => {
+    if (_pdfActive < PDF_CONCURRENCY) {
+      _pdfActive++;
+      resolve();
+    } else if (pdfWaitQueue.length >= PDF_QUEUE_MAX) {
+      reject(new Error('PDF_QUEUE_FULL'));
+    } else {
+      pdfWaitQueue.push(resolve);
+    }
+  });
+}
+
+function releasePdfSlot() {
+  if (pdfWaitQueue.length > 0) {
+    const next = pdfWaitQueue.shift();
+    next(); // Slot direkt weitergeben, _pdfActive bleibt gleich
+  } else {
+    _pdfActive--;
+  }
+}
 
 async function getPuppeteer() {
   if (!_puppeteer) {
@@ -74,12 +98,19 @@ function loadSessions() {
   }
 }
 
+// Debounced save: bei vielen gleichzeitigen Logins nicht bei jedem Token in die
+// Datei schreiben, sondern maximal einmal pro 500ms — verhindert Race Conditions.
+let _saveTimer = null;
 function saveSessions(sessions) {
-  try {
-    fs.writeFileSync(SESSION_FILE, JSON.stringify(sessions), 'utf8');
-  } catch (err) {
-    console.warn('Sessions konnten nicht gespeichert werden:', err.message);
-  }
+  if (_saveTimer) return;
+  _saveTimer = setTimeout(() => {
+    _saveTimer = null;
+    try {
+      fs.writeFileSync(SESSION_FILE, JSON.stringify(sessions), 'utf8');
+    } catch (err) {
+      console.warn('Sessions konnten nicht gespeichert werden:', err.message);
+    }
+  }, 500);
 }
 
 let activeSessions = loadSessions();
@@ -96,7 +127,7 @@ function requireAuth(req, res, next) {
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 8 * 1024 * 1024 }, // 8 MB
-  fileFilter: (req, file, cb) => {
+  fileFilter: (_req, file, cb) => {
     const allowed = ['application/pdf', 'image/png', 'image/jpeg', 'image/webp'];
     if (allowed.includes(file.mimetype)) {
       cb(null, true);
@@ -315,11 +346,12 @@ app.post('/api/pdf', requireAuth, pdfLimiter, async (req, res) => {
     return res.status(400).json({ error: true, message: 'Fehlende Daten.' });
   }
 
-  // Concurrency-Check: max. 3 PDFs gleichzeitig rendern
-  if (_pdfQueue >= PDF_CONCURRENCY) {
-    return res.status(503).json({ error: true, message: 'PDF-Erstellung kurz ausgelastet — bitte 10 Sekunden warten und erneut versuchen.' });
+  // Slot in der PDF-Queue holen (max. 3 gleichzeitig, Rest wartet statt 503)
+  try {
+    await acquirePdfSlot();
+  } catch {
+    return res.status(503).json({ error: true, message: 'PDF-Erstellung momentan sehr ausgelastet — bitte 30 Sekunden warten und erneut versuchen.' });
   }
-  _pdfQueue++;
 
   const avg = (ratings, catIdx, bullets) => {
     const vals = (bullets || []).map((_, bIdx) => ratings[catIdx]?.[bIdx] ?? 5);
@@ -358,7 +390,7 @@ app.post('/api/pdf', requireAuth, pdfLimiter, async (req, res) => {
     console.error('PDF-Fehler:', err);
     res.status(500).json({ error: true, message: 'PDF konnte nicht erstellt werden. Bitte erneut versuchen.' });
   } finally {
-    _pdfQueue--;
+    releasePdfSlot();
   }
 });
 
