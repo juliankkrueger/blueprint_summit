@@ -7,15 +7,32 @@ const multer   = require('multer');
 const Anthropic  = require('@anthropic-ai/sdk');
 const rateLimit  = require('express-rate-limit');
 
+// ── Globale Crash-Absicherung ───────────────────────────
+// Ein einzelner unbehandelter Fehler (PDF-Edge-Case, API-Fehler, abgebrochene
+// Client-Verbindung) darf NICHT den gesamten Node-Prozess killen — sonst sehen
+// ALLE Nutzer einen 502, bis Railway den Container neu startet (und dabei alle
+// In-Memory-Sessions verliert). Wir loggen den Fehler und laufen weiter:
+// Verfügbarkeit für den Event-Betrieb hat Vorrang. Die einzelnen Request-Handler
+// haben jeweils eigenes try/catch — das hier ist die letzte Verteidigungslinie.
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason instanceof Error ? reason.stack : reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException]', err && err.stack ? err.stack : err);
+});
+
 // ── Puppeteer Browser-Pool ──────────────────────────────
 // Ein Browser bleibt offen, nur Pages werden geöffnet/geschlossen.
 // Drastisch ressourcenschonender als pro Anfrage einen neuen Browser zu starten.
 let _puppeteer = null;
 let _browser   = null;
-let _pdfActive  = 0;          // aktive PDF-Renders
-const PDF_CONCURRENCY  = 3;  // max. gleichzeitige PDFs
-const PDF_QUEUE_MAX    = 40; // max. wartende PDF-Requests (danach ablehnen)
-const pdfWaitQueue     = [];  // wie API-Queue: Requests warten statt abgelehnt zu werden
+let _pdfActive = 0;           // aktive PDF-Renders
+let _pdfTotal  = 0;           // PDFs seit letztem Browser-Start (für Recycling)
+const PDF_CONCURRENCY     = 3;     // max. gleichzeitige PDFs
+const PDF_QUEUE_MAX       = 40;    // max. wartende PDF-Requests (danach ablehnen)
+const PDF_BROWSER_RECYCLE = 40;    // Browser nach N PDFs neu starten (gegen Chromium-Memory-Leak)
+const PDF_RENDER_TIMEOUT  = 25000; // Hard-Timeout pro PDF-Render (ms) — gegen hängende Pages
+const pdfWaitQueue        = [];    // wie API-Queue: Requests warten statt abgelehnt zu werden
 
 function acquirePdfSlot() {
   return new Promise((resolve, reject) => {
@@ -52,12 +69,30 @@ async function getBrowser() {
     const puppeteer = await getPuppeteer();
     _browser = await puppeteer.launch({
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+      protocolTimeout: 60000,
+      args: [
+        '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage',
+        '--disable-gpu', '--no-zygote', '--disable-extensions',
+        '--disable-background-networking', '--disable-software-rasterizer'
+      ]
     });
+    _pdfTotal = 0;
     console.log('Puppeteer Browser gestartet ✓');
     _browser.on('disconnected', () => { _browser = null; });
   }
   return _browser;
+}
+
+// Browser nach vielen PDFs gezielt neu starten → verhindert, dass der Chromium-
+// Speicher über die Zeit unbegrenzt wächst (häufigste OOM-Ursache bei einem
+// langlebigen Browser-Pool). Nur recyceln, wenn gerade kein Render aktiv ist.
+async function recycleBrowserIfNeeded() {
+  if (_pdfTotal >= PDF_BROWSER_RECYCLE && _pdfActive === 0 && _browser) {
+    const b = _browser;
+    _browser = null; // sofort freigeben → paralleler getBrowser() startet frisch
+    try { await b.close(); } catch {}
+    console.log('Puppeteer Browser recycelt (Memory-Schutz) ✓');
+  }
 }
 
 // Chart.js beim Start vorladen → kein CDN-Aufruf beim PDF-Rendering
@@ -116,6 +151,17 @@ function saveSessions(sessions) {
 let activeSessions = loadSessions();
 console.log(`Sessions geladen: ${Object.keys(activeSessions).length} aktive Sessions`);
 
+// Abgelaufene Sessions auch im laufenden Betrieb stündlich entfernen — sonst wächst
+// die Map über eine lange Event-Laufzeit nur an (bisher wurde nur beim Boot gesäubert).
+setInterval(() => {
+  const now = Date.now();
+  let changed = false;
+  for (const [token, ts] of Object.entries(activeSessions)) {
+    if (now - ts >= SESSION_TTL) { delete activeSessions[token]; changed = true; }
+  }
+  if (changed) saveSessions(activeSessions);
+}, 60 * 60 * 1000).unref();
+
 function requireAuth(req, res, next) {
   const token = req.headers['x-session-token'];
   if (!token || !activeSessions[token]) {
@@ -138,6 +184,13 @@ const upload = multer({
 });
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+// ── Healthcheck (für Railway) ───────────────────────────
+// Muss VOR allem anderen stehen und IMMER sofort 200 liefern. Railway nutzt diesen
+// Pfad (railway.json → healthcheckPath), um zu erkennen, wann der Container nach
+// einem Deploy/Neustart wirklich bereit ist. Ohne Healthcheck leitet Railway sofort
+// Traffic auf den noch startenden Container → genau die 502-Fehler beim Deploy.
+app.get('/health', (_req, res) => res.status(200).send('ok'));
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
@@ -370,13 +423,29 @@ app.post('/api/pdf', requireAuth, pdfLimiter, async (req, res) => {
     // Shared Browser-Pool: nur neue Page öffnen, kein neuer Browser
     const browser = await getBrowser();
     page = await browser.newPage();
-    await page.setContent(html, { waitUntil: chartJsSource ? 'domcontentloaded' : 'networkidle0' });
-    const pdfBuffer = await page.pdf({
-      format: 'A4',
-      printBackground: true,
-      margin: { top: '14mm', bottom: '14mm', left: '14mm', right: '14mm' }
-    });
+    page.setDefaultTimeout(PDF_RENDER_TIMEOUT);
+
+    // Gesamten Render in einen Hard-Timeout wrappen: eine hängende Page (z.B. ein
+    // blockierendes CDN beim networkidle0-Fallback) darf den PDF-Slot nicht dauerhaft
+    // belegen — sonst läuft die ganze Queue voll und alle PDF-Requests scheitern.
+    const pdfBuffer = await Promise.race([
+      (async () => {
+        await page.setContent(html, {
+          waitUntil: chartJsSource ? 'domcontentloaded' : 'networkidle0',
+          timeout: PDF_RENDER_TIMEOUT
+        });
+        return page.pdf({
+          format: 'A4',
+          printBackground: true,
+          margin: { top: '14mm', bottom: '14mm', left: '14mm', right: '14mm' }
+        });
+      })(),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('PDF_RENDER_TIMEOUT')), PDF_RENDER_TIMEOUT + 2000)
+      )
+    ]);
     await page.close();
+    page = null;
 
     const safe     = (extractedData.level || 'Level').replace(/[^a-zA-Z0-9äöüÄÖÜß_-]/g, '_');
     const dateStr  = new Date().toISOString().slice(0, 10);
@@ -387,10 +456,14 @@ app.post('/api/pdf', requireAuth, pdfLimiter, async (req, res) => {
     res.send(pdfBuffer);
   } catch (err) {
     if (page) await page.close().catch(() => {});
-    console.error('PDF-Fehler:', err);
-    res.status(500).json({ error: true, message: 'PDF konnte nicht erstellt werden. Bitte erneut versuchen.' });
+    console.error('PDF-Fehler:', err && err.message ? err.message : err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: true, message: 'PDF konnte nicht erstellt werden. Bitte erneut versuchen.' });
+    }
   } finally {
+    _pdfTotal++;
     releasePdfSlot();
+    recycleBrowserIfNeeded().catch(() => {});
   }
 });
 
@@ -522,6 +595,19 @@ new Chart(document.getElementById('c'),{type:'radar',data:{labels:${labels},data
 </body></html>`;
 }
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Blueprint Summit läuft auf http://localhost:${PORT}`);
 });
+
+// Graceful Shutdown: Railway sendet bei jedem Deploy SIGTERM. Sauber herunterfahren,
+// damit laufende Requests nicht hart abgeschnitten werden und Chromium nicht verwaist.
+function shutdown(signal) {
+  console.log(`${signal} empfangen — fahre sauber herunter…`);
+  server.close(() => {
+    if (_browser) { _browser.close().catch(() => {}); }
+    process.exit(0);
+  });
+  setTimeout(() => process.exit(0), 8000).unref(); // Notbremse, falls server.close hängt
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT',  () => shutdown('SIGINT'));
