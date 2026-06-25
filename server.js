@@ -109,6 +109,18 @@ let chartJsSource = null;
   }
 })();
 
+// Logo einmal beim Start laden → KEIN synchrones fs.readFileSync bei jedem PDF-Request.
+// Synchrones Datei-I/O im Request-Pfad blockiert sonst den Event-Loop und damit auch
+// den Railway-Healthcheck unter Last (→ Railway könnte den Container fälschlich killen).
+let logoB64Cache = '';
+try {
+  const logoPath = path.join(__dirname, 'branding_assets', 'brand_guide', 'Logos', 'blueprint_summit_logo_weiss.png');
+  logoB64Cache = fs.readFileSync(logoPath).toString('base64');
+  console.log('Logo vorgeladen ✓');
+} catch (err) {
+  console.warn('Logo-Vorladung fehlgeschlagen (PDF zeigt dann kein Logo):', err.message);
+}
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -190,7 +202,16 @@ const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 // Pfad (railway.json → healthcheckPath), um zu erkennen, wann der Container nach
 // einem Deploy/Neustart wirklich bereit ist. Ohne Healthcheck leitet Railway sofort
 // Traffic auf den noch startenden Container → genau die 502-Fehler beim Deploy.
-app.get('/health', (_req, res) => res.status(200).send('ok'));
+app.get('/health', (_req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    uptimeSec: Math.round(process.uptime()),
+    activeSessions: Object.keys(activeSessions || {}).length,
+    pdfActive: _pdfActive,
+    pdfQueued: pdfWaitQueue ? pdfWaitQueue.length : 0,
+    apiQueued: apiWaitQueue ? apiWaitQueue.length : 0
+  });
+});
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
@@ -414,9 +435,8 @@ app.post('/api/pdf', requireAuth, pdfLimiter, async (req, res) => {
   const mentorAvgs = extractedData.categories.map((cat, i) => avg(mentorRatings, i, cat.bullets));
   const menteeAvgs = extractedData.categories.map((cat, i) => avg(menteeRatings, i, cat.bullets));
 
-  const logoPath = path.join(__dirname, 'branding_assets', 'brand_guide', 'Logos', 'blueprint_summit_logo_weiss.png');
-  const logoB64  = fs.readFileSync(logoPath).toString('base64');
-  const html     = generatePdfHtml(extractedData, mentorAvgs, menteeAvgs, mentorRatings, menteeRatings, logoB64);
+  // Logo aus dem Boot-Cache (kein synchrones I/O pro Request → Event-Loop bleibt frei)
+  const html = generatePdfHtml(extractedData, mentorAvgs, menteeAvgs, mentorRatings, menteeRatings, logoB64Cache);
 
   let page;
   try {
